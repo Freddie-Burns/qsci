@@ -16,7 +16,8 @@ from openfermion.chem import MolecularData
 
 ROOT = Path(__file__).parent.resolve()
 
-# Save the API token in a text file - do not distribute or accidentally push to GitHub
+# Save the API token in a text file
+# Do not distribute or accidentally push to GitHub
 with open(ROOT / "token.txt", 'r') as textfile:
     TOKEN = textfile.read()
 
@@ -55,15 +56,6 @@ class JobData:
         return self.job.result().results
 
 
-def load_job_data(filename: str) -> JobData:
-    """
-    Load job data from pkl file.
-    """
-    with open(filename, 'rb') as file:
-        save_job = dill.load(file)
-    return save_job
-
-
 def job_data_path(job_id: str) -> Path:
     """
     Create directory from final 6 characters of job ID.
@@ -71,3 +63,13 @@ def job_data_path(job_id: str) -> Path:
     job_dir: Path = ROOT / "data" / job_id[-6:]
     os.makedirs(job_dir, exist_ok=True)
     return job_dir
+
+
+def load_job_data(job_id: str) -> JobData:
+    """
+    Load job data from pkl file.
+    """
+    job_dir: Path = job_data_path(job_id)
+    with open(job_dir / "JobData.pkl", 'rb') as file:
+        job_data = dill.load(file)
+    return job_data
