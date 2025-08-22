@@ -1,3 +1,7 @@
+"""
+Example of how to calculate RHF solutions with PySCF.
+"""
+
 from pyscf import gto, scf
 
 # --- 1) Build molecule ---
