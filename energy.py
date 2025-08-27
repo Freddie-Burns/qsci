@@ -15,7 +15,8 @@ from openfermion import MolecularData, jordan_wigner
 from openfermionpyscf import run_pyscf
 from pyscf.fci import FCI
 from pyscf.gto import Mole
-from pyscf.scf import RHF, UHF
+from pyscf.scf.hf import RHF
+from pyscf.scf.uhf import UHF
 from qiskit.result.models import ExperimentResult
 from symmer import PauliwordOp, QuantumState
 
