@@ -141,6 +141,8 @@ def fci_energy(molecule: MolecularData) -> list[float]:
     """
     :param molecule: MolecularData for the molecule being simulated.
     :return: list[float], FCI energies in Hartree.
+
+    Return full list of FCI energies from openfermion object.
     """
     ensure_pyscf_calculated(molecule)
     mol: Mole = molecule._pyscf_data['mol']
@@ -159,15 +161,19 @@ def ensure_pyscf_calculated(molecule: MolecularData) -> None:
 
 def _calculate_fci(mol: Mole, hf: RHF | UHF) -> list[float]:
     """
-    Calculate the full configuration interaction energies as a basis for comparison.
+    Calculate the full configuration interaction energies.
+    Requires PySCF molecule and Hartree-Fock objects.
     """
     fci = FCI(hf)
 
     # Calculate number of possible configs from number of atomic orbitals
     # and number of up and down spin electrons to fill them
     total_configs = comb(mol.nao, mol.nelec[0]) * comb(mol.nao, mol.nelec[1])
+
+    # nroots is 1 by default, only calculating the ground state eigenvalue
     fci.nroots = total_configs
 
+    # The kernel returns the eigenvalues and eigenvectors of the Hamiltonian
     fci_energies, _ = fci.kernel()
     return fci_energies
 
