@@ -1,6 +1,7 @@
 """
 Module for energy calculation functionality.
 Configuration selection and diagonalisation of the Hamiltonian.
+EnergyData objects store mol and energy data calculated from QSCI samples.
 """
 
 
@@ -135,9 +136,7 @@ def qsci_energies(
     return eigvals, correct_proportion
 
 
-def fci_energy(
-        molecule: MolecularData,
-    ) -> list[float]:
+def fci_energy(molecule: MolecularData) -> list[float]:
     """
     :param molecule: MolecularData for the molecule being simulated.
     :return: list[float], FCI energies in Hartree.
@@ -157,13 +156,17 @@ def ensure_pyscf_calculated(molecule: MolecularData) -> None:
     if vars(molecule).get('_pyscf_data') is None:
         run_pyscf(molecule)
 
-def _calculate_fci(mol, hf) -> list[float]:
+def _calculate_fci(mol: Mole, hf: RHF | UHF) -> list[float]:
     """
     Calculate the full configuration interaction energies as a basis for comparison.
     """
     fci = FCI(hf)
+
+    # Calculate number of possible configs from number of atomic orbitals
+    # and number of up and down spin electrons to fill them
     total_configs = comb(mol.nao, mol.nelec[0]) * comb(mol.nao, mol.nelec[1])
-    fci.nroots = total_configs # maximum number of configurations
+    fci.nroots = total_configs
+
     fci_energies, _ = fci.kernel()
     return fci_energies
 
