@@ -1,7 +1,19 @@
+from enum import Enum
+
 import numpy as np
 from openfermion import MolecularData
 from openfermionpyscf import run_pyscf
 from pyscf.cc import CCSD
+
+
+class Basis(str, Enum):
+    """Enumerator for molecular orbital bases"""
+    STO_3G    = "sto-3g"
+    SIX_31G   = "6-31g"
+    SIX_31Gss = "6-31g**"
+    CC_PVDZ   = "cc-pvdz"
+    CC_PVTZ   = "cc-pvtz"
+    CC_PVQZ   = "cc-pvqz"
 
 
 def create_molecule(
