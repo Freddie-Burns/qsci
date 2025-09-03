@@ -3,8 +3,6 @@ Top level script to run the quantum circuit on the hardware.
 """
 
 
-import numpy as np
-
 import cloud
 import molecule
 import store
