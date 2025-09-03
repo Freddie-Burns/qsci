@@ -7,7 +7,11 @@ from pyscf.cc import CCSD
 
 
 class Basis(str, Enum):
-    """Enumerator for molecular orbital bases"""
+    """
+    Enumerator for pyscf's molecular orbital basis strings.
+    These are required when creating pyscf Mole and
+    openfermion MolecularData objects.
+    """
     STO_3G    = "sto-3g"
     SIX_31G   = "6-31g"
     SIX_31Gss = "6-31g**"
@@ -18,7 +22,7 @@ class Basis(str, Enum):
 
 def create_molecule(
         geometry,
-        basis="sto-3g",
+        basis=Basis.STO_3G,
         multiplicity=0,
         charge=0,
     ) -> MolecularData:
@@ -34,12 +38,41 @@ def coupled_cluster(molecule, run_fci=False):
     ccsd = CCSD(hf).run()
     return ccsd
 
-def lithium_hydride(bond_length=1, **kwargs):
-    geometry = [('Li',(0,0,0)),('H',(0,0,bond_length))]
-    return create_molecule(geometry, multiplicity=1, charge=0, **kwargs)
 
-def formaldehyde(bond_length=1, **kwargs):
-    # Geometry from PubChem O C H H
+def lithium_hydride(bond_length=1, basis=Basis.STO_3G, **kwargs):
+    geometry = [
+        ('Li', (0, 0, 0)),
+        ('H', (0, 0, bond_length)),
+    ]
+    mol = create_molecule(
+        geometry=geometry,
+        basis=basis,
+        multiplicity=1,
+        charge=0,
+        **kwargs,
+    )
+    return mol
+
+
+def formaldehyde(bond_length: float = 1, **kwargs) -> MolecularData:
+    """
+    Create a formaldehyde molecule with adjustable C=O bond length.
+
+    The base geometry is taken from PubChem and modified to set the
+    carbon–oxygen bond length. Hydrogen positions are adjusted accordingly.
+
+    Parameters
+    ----------
+    bond_length : float, optional
+        Desired C=O bond length in angstroms (default is 1).
+    **kwargs
+        Additional keyword arguments forwarded to MolecularData.
+
+    Returns
+    -------
+    MolecularData
+        Formaldehyde molecule object.
+    """
     geometry_arr = np.array([
     [2.000, -0.560, 0.000],
     [2.866, -0.060, 0.000],
