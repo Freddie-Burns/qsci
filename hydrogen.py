@@ -1,82 +1,132 @@
 """
 Examples
 --------
->>> cfg = HChainConfig(n_atoms=6, bond_length=0.75)
->>> res = calculate_h_chain_energies(cfg)
+# Evenly spaced linear chain along z
+>>> cfg = EvenlySpacedLinearHChainConfig(n_linear_atoms=6, bond_length=0.75)
+>>> res = calculate_hydrogen_chain_energies(cfg)
 >>> res.fci_energy
 -3.14
+
+# Arbitrary H-only arrangement
+>>> cfg = HydrogenChainConfig(geometry="H 0 0 0; H 0.0 0.0 0.75; H 0.2 0.1 1.50")
+>>> res = calculate_hydrogen_chain_energies(cfg)
+>>> res.rhf_energy  # doctest: +ELLIPSIS
+-...
 """
 
+import math
 
-import numpy as np
 from pydantic import BaseModel, Field, computed_field
 from pyscf import gto, scf, fci
 
 from molecule import Basis
 
 
-class HChainConfig(BaseModel):
-    """
-    Configuration model for building and computing a linear hydrogen chain.
+# ---------------------------
+# Base (general) configuration
+# ---------------------------
 
-    This class validates input parameters such as the number of atoms and
-    bond length, and provides derived quantities like the spin multiplicity.
+
+class HydrogenChainConfig(BaseModel):
+    """
+    General configuration for an H-only system with an arbitrary geometry.
 
     Parameters
     ----------
-    n_atoms : int
-        Number of hydrogen atoms in the chain. Must be >= 1.
-    bond_length : float
-        Distance between neighbouring hydrogen atoms in angstroms. Must be > 0.
+    geometry : str
+        PySCF-compatible geometry string (e.g., "H x y z; H x y z; ...").
     basis : Basis, default=Basis.STO_3G
-        Basis set to use for the calculation.
+        Basis set to use.
     charge : int, default=0
-        Net charge of the molecule.
+        Net molecular charge.
     verbose : int, default=1
-        PySCF verbosity level (0 = silent, higher values = more output).
+        PySCF verbosity.
 
     Attributes
     ----------
+    n_atoms : int
+        Number of H atoms, inferred from `geometry`.
     spin : int
-        Number of unpaired electrons. Computed as `n_atoms % 2`.
+        Number of unpaired electrons, computed as (n_atoms - charge) % 2.
     """
-    n_atoms: int = Field(..., ge=1, description="Number of H atoms")
-    bond_length: float = Field(..., gt=0, description="Å")
+    geometry: str = Field(..., description="PySCF geometry for H-only system")
     basis: Basis = Field(default=Basis.STO_3G)
     charge: int = 0
     verbose: int = 1
 
+    @computed_field(return_type=int)
+    def n_atoms(self) -> int:
+        """Number of H atoms inferred from the geometry string."""
+        # split on ';' while tolerating extra whitespace
+        atoms = [a.strip() for a in self.geometry.split(";") if a.strip()]
+        return len(atoms)
+
     @property
     def spin(self) -> int:
         """Number of unpaired electrons; 0 indicates a singlet state."""
-        return self.n_atoms % 2
+        return (self.n_atoms - self.charge) % 2
+
+
+# -----------------------------------------------------
+# Specialized config: evenly spaced linear H chain (z)
+# -----------------------------------------------------
+
+
+class EvenlySpacedLinearHChainConfig(HydrogenChainConfig):
+    """
+    Specialized configuration for an evenly spaced linear hydrogen chain
+    aligned along the z-axis.
+
+    Parameters
+    ----------
+    n_linear_atoms : int
+        Number of H atoms in the chain (>= 1).
+    bond_length : float
+        Distance between neighboring H atoms in angstroms (> 0).
+
+    Notes
+    -----
+    This subclass *defines* `geometry` from `n_linear_atoms` and `bond_length`.
+    Other attributes (basis, charge, verbose) are inherited.
+    """
+    n_linear_atoms: int = Field(..., ge=1, description="Number of H atoms")
+    bond_length: float = Field(..., gt=0, description="Å spacing along z")
+
+    @computed_field(return_type=str)  # overrides base geometry
+    def geometry(self) -> str:  # type: ignore[override]
+        """PySCF geometry string for an evenly spaced chain along z."""
+        return "; ".join(
+            f"H 0 0 {n * self.bond_length:.6f}" for n in range(self.n_linear_atoms)
+        )
+
+    @computed_field(return_type=int)
+    def n_atoms(self) -> int:  # type: ignore[override]
+        """Keep `n_atoms` consistent with `n_linear_atoms`."""
+        return self.n_linear_atoms
+
+
+# -------------
+# Result object
+# -------------
 
 
 class HChainResult(BaseModel):
     """
     Result model for electronic structure calculations on a hydrogen chain.
 
-    Stores the total electronic energies computed by FCI, RHF, and UHF methods,
-    along with the final molecular geometry specification.
+    Stores total electronic energies from FCI, RHF, and UHF, plus the final
+    molecular geometry specification.
 
     Parameters
     ----------
     fci_energy : float
-        Total energy from the full configuration interaction (FCI) calculation,
-        in Hartree.
+        FCI total energy (Hartree).
     rhf_energy : float
-        Total energy from the restricted Hartree–Fock (RHF) calculation,
-        in Hartree.
+        RHF total energy (Hartree).
     uhf_energy : float
-        Total energy from the unrestricted Hartree–Fock (UHF) calculation,
-        in Hartree.
+        UHF total energy (Hartree).
     geometry : str
-        PySCF-compatible geometry string of the hydrogen chain, formatted as
-        `"H 0 0 z; H 0 0 z; ..."`.
-    z_positions: list[float]
-        z-axis positions of the molecule, in angstroms.
-    bond_length: float
-        Bond length of first two hydrogens in the chain in angstroms.
+        PySCF-compatible geometry string.
     """
     fci_energy: float
     """FCI total energy in Hartree."""
@@ -88,83 +138,91 @@ class HChainResult(BaseModel):
     """UHF total energy in Hartree."""
 
     geometry: str
-    """Geometry string of the hydrogen chain in PySCF format."""
+    """Geometry string in PySCF format."""
 
-    # Standard properties are not stored in a pandas.DataFrame by model_dump
-    # A computed_field will be stored.
-    @computed_field(return_type=list[float])
-    def z_positions(self) -> list[float]:
-        """Array of z-axis positions of hydrogen atoms in the chain."""
-        return [float(atom.split()[3]) for atom in self.geometry.split(";")]
+    # Helpful computed fields that work for arbitrary 3D arrangements
+    @computed_field(return_type=list[tuple[float, float, float]])
+    def positions(self) -> list[tuple[float, float, float]]:
+        """
+        Parsed (x, y, z) positions (Å) from the geometry string.
+        """
+        pts: list[tuple[float, float, float]] = []
+        for atom in [a.strip() for a in self.geometry.split(";") if a.strip()]:
+            parts = atom.split()
+            # Expect "H x y z"
+            if len(parts) != 4 or parts[0].upper() != "H":
+                raise ValueError(
+                    f"Invalid atom entry for hydrogen geometry: '{atom}'"
+                )
+            x, y, z = map(float, parts[1:])
+            pts.append((x, y, z))
+        return pts
 
     @computed_field(return_type=float)
-    def bond_length(self) -> float:
-        """Bond length of first two hydrogen atoms in the chain."""
-        return self.z_positions[1] - self.z_positions[0]
+    def first_bond_length(self) -> float:
+        """
+        Distance (Å) between the first two hydrogens (if >= 2 atoms),
+        otherwise 0.0.
+        """
+        if len(self.positions) < 2:
+            return 0.0
+        (x1, y1, z1), (x2, y2, z2) = self.positions[0], self.positions[1]
+        return float(math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2))
 
 
-def calculate_h_chain_energies(config: HChainConfig) -> HChainResult:
+# -----------------------
+# Calculation entry point
+# -----------------------
+
+
+def calculate_hydrogen_chain_energies(config: HydrogenChainConfig) -> HChainResult:
     """
-    Build and compute the electronic structure of a linear hydrogen chain.
+    Build and compute the electronic structure of an H-only system.
 
-    Constructs a chain of hydrogen atoms aligned along the z-axis with equal
-    spacing, using the parameters provided in `HChainConfig`. The function
-    runs restricted Hartree–Fock (RHF), unrestricted Hartree–Fock (UHF), and
-    full configuration interaction (FCI) calculations using PySCF, returning
-    their total energies.
+    Accepts either a general `HydrogenChainConfig` (arbitrary geometry)
+    or the specialized `EvenlySpacedLinearHChainConfig` (equispaced z-chain).
 
     Parameters
     ----------
-    config : HChainConfig
-        Configuration object specifying the number of atoms, bond length,
-        basis set, and other molecular parameters.
+    config : HydrogenChainConfig
+        Configuration object carrying geometry, basis, charge, and verbosity.
 
     Returns
     -------
     HChainResult
-        Object containing the RHF, UHF, and FCI total energies in Hartree,
-        as well as the geometry string.
+        RHF, UHF, and FCI total energies (Hartree) and the geometry string.
 
     Notes
     -----
-    - The molecule is assumed to be neutral (`charge=0`) unless overridden.
-    - The spin multiplicity is set automatically from `n_atoms % 2`.
     - Energies are returned in atomic units (Hartree).
-
-    Examples
-    --------
-    >>> cfg = HChainConfig(n_atoms=6, bond_length=0.75)
-    >>> res = calculate_h_chain_energies(cfg)
-    >>> res.fci_energy
-    -3.14159
+    - Spin is inferred as (n_atoms - charge) % 2.
     """
-    geometry = "; ".join(
-        f"H 0 0 {n * config.bond_length:.6f}" for n in range(config.n_atoms)
-    )
-
     mol = gto.Mole()
-    mol.atom = geometry
+    mol.atom = config.geometry
     mol.basis = config.basis
     mol.charge = config.charge
     mol.spin = config.spin
     mol.verbose = config.verbose
     mol.build()
 
+    # RHF
     rhf_obj = scf.RHF(mol).run()
-    rhf_energy = rhf_obj.e_tot
+    rhf_energy = float(rhf_obj.e_tot)
 
+    # UHF with stability check
     uhf_obj = scf.UHF(mol).run()
     mo1 = uhf_obj.stability()[0]
     dm1 = uhf_obj.make_rdm1(mo1, uhf_obj.mo_occ)
     uhf_obj = uhf_obj.run(dm1)
-    uhf_energy = uhf_obj.e_tot
+    uhf_energy = float(uhf_obj.e_tot)
 
+    # FCI using RHF reference
     ci_solver = fci.FCI(rhf_obj).run()
-    fci_energy = ci_solver.e_tot
+    fci_energy = float(ci_solver.e_tot)
 
     return HChainResult(
         fci_energy=fci_energy,
         rhf_energy=rhf_energy,
         uhf_energy=uhf_energy,
-        geometry=geometry,
+        geometry=config.geometry,
     )
