@@ -79,7 +79,7 @@ class EvenlySpacedLinearHChainConfig(HydrogenChainConfig):
 
     Parameters
     ----------
-    n_linear_atoms : int
+    n_atoms : int
         Number of H atoms in the chain (>= 1).
     bond_length : float
         Distance between neighboring H atoms in angstroms (> 0).
@@ -89,7 +89,8 @@ class EvenlySpacedLinearHChainConfig(HydrogenChainConfig):
     This subclass *defines* `geometry` from `n_linear_atoms` and `bond_length`.
     Other attributes (basis, charge, verbose) are inherited.
     """
-    n_linear_atoms: int = Field(..., ge=1, description="Number of H atoms")
+    # n_atoms is overriding the computed_field from the base class.
+    n_atoms: int = Field(..., ge=1, description="Number of H atoms")
     bond_length: float = Field(..., gt=0, description="Å spacing along z")
 
     @computed_field(return_type=str)  # overrides base geometry
@@ -98,11 +99,6 @@ class EvenlySpacedLinearHChainConfig(HydrogenChainConfig):
         return "; ".join(
             f"H 0 0 {n * self.bond_length:.6f}" for n in range(self.n_linear_atoms)
         )
-
-    @computed_field(return_type=int)
-    def n_atoms(self) -> int:  # type: ignore[override]
-        """Keep `n_atoms` consistent with `n_linear_atoms`."""
-        return self.n_linear_atoms
 
 
 # -------------
